@@ -1,0 +1,10 @@
+Things to include in a trouble shooting/useful info menu:
+
+- If there is only noise being output on the DAQ stream it is likely that the wrong channel was provided
+- All DAQ measurements are made in differential mode
+- If the motor does not connect properly - try a power cycle.  Sometimes previous hang ups of running the
+  scripts can cause a problem
+- Make sure to restart the kernel each failure.  Although everything is killed appropriately when closing 
+  the script, if it crashes at some point it make not make all the correct closing commands.
+
+-The chopper takes an 8-bit number to determine it's speed, breaking 0-1 Hz from [0,255]
