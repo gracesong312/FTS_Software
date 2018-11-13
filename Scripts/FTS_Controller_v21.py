@@ -7,8 +7,8 @@ from PyQt4.QtGui import *
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT# as NavigationToolbar
 from matplotlib.figure import Figure
-from FTS.thorFW102cDriver import FilterWheelDriver
-from FTS.NIdaqDriver import MultiChannelAnalogInput
+#from FTS.thorFW102cDriver import FilterWheelDriver
+#from FTS.NIdaqDriver import MultiChannelAnalogInput
 from matplotlib import pyplot as plt
 from matplotlib.animation import TimedAnimation
 from matplotlib.lines import Line2D
@@ -22,35 +22,35 @@ import warnings
 warnings.filterwarnings("ignore")
 
 class NavigationToolbar(NavigationToolbar2QT):
-    
+
     toolitems = [t for t in NavigationToolbar2QT.toolitems if
                  t[0] in ('Home','Pan', 'Zoom', 'Save')]
 
     def __init__(self, *args, **kwargs):
         super(NavigationToolbar, self).__init__(*args, **kwargs)
-        self.layout().takeAt(4)  
-        
+        self.layout().takeAt(4)
+
 class HomeThread(QThread):
-    
+
     response = pyqtSignal(str)
-    
+
     def __init__(self,motorLoop,motor):
         super(HomeThread,self).__init__()
         self.motorLoop = motorLoop
         self.motor = motor
-        
+
     def __del__(self):
         self.wait()
-        
+
     def run(self):
         self.motorLoop.pause()
         self.motor.send('HOME X\n')
         self.response.emit(self.motor.recv(1024))
         self.motorLoop.resume()
-                    
+
 
 class ContinuousThread(QThread):
-    
+
     send_position = pyqtSignal(float)
 
     def __init__(self,motor):
@@ -59,15 +59,15 @@ class ContinuousThread(QThread):
         self.paused = False
         self.motor = motor
 
-        
-    def __del__(self):    
+
+    def __del__(self):
         self.exiting = True
         self.wait()
-        
+
     def pause(self): self.paused = True; self.msleep(100)
-    
+
     def resume(self): self.paused = False; self.msleep(100)
-    
+
     def run(self):
         while not self.exiting:
             while self.paused:
@@ -80,14 +80,14 @@ class ContinuousThread(QThread):
                 self.send_position.emit(position)
             except:
                 pass
- 
+
 
 class ScanThread(QThread):
 
-    
+
     send_position = pyqtSignal(float)
     send_data = pyqtSignal(tuple)
-    
+
     def __init__(self,motorLoop,motor,position_data,DAQ_data,DAQ,step_size,throw,speed,li_time,plot_scan):
         super(ScanThread,self).__init__()
         self.exiting = False
@@ -102,15 +102,15 @@ class ScanThread(QThread):
         self.num_steps = np.ceil(abs(throw/step_size))
         self.li_time = li_time*1e3 #[s] -> [ms]
         self.plot_scan = plot_scan
-        
-    def __del__(self):    
+
+    def __del__(self):
         self.exiting = True
         self.wait()
-        
+
     def pause(self): self.paused = True; self.msleep(100)
-    
+
     def resume(self): self.paused = False; self.msleep(100)
-    
+
     def run(self):
         self.motorLoop.pause()
         self.motor.send('WAIT MODE INPOS\n')
@@ -136,7 +136,7 @@ class ScanThread(QThread):
         self.motor.send('WAIT MODE NOWAIT\n')
         response = self.motor.recv(1024)
         self.motorLoop.resume()
-      
+
 
 class CustomFigCanvas(FigureCanvas, TimedAnimation):
 
@@ -145,7 +145,7 @@ class CustomFigCanvas(FigureCanvas, TimedAnimation):
         self.xdata = []
         self.ydata = []
 
-        self.nbins = throw/step_size
+        self.nbins = int(throw/step_size)
         self.x = np.zeros(self.nbins) #To cover 50% of the plots at a time use self.bins/2
         self.y = np.zeros(self.nbins)
         self.tlen = int(self.nbins/8) #Tail length for highlighting the data
@@ -188,14 +188,14 @@ class CustomFigCanvas(FigureCanvas, TimedAnimation):
 
     def new_frame_seq(self):
         return itertools.count()
-        
+
     def update_nbins(self,throw,step_size):
         self.nbins = throw/step_size
-        
+
     def add_data(self, valuex,valuey):
         self.xdata.append(valuex)
         self.ydata.append(valuey)
-        
+
     def clear(self):
         lines = [self.line1, self.line1_tail, self.line1_head,self.line2, self.line2_tail, self.line2_head]
         for l in lines:
@@ -204,8 +204,8 @@ class CustomFigCanvas(FigureCanvas, TimedAnimation):
         self.xdata = []
         self.ydata = []
         self.x = np.zeros(self.nbins)
-        self.y = np.zeros(self.nbins)        
-        
+        self.y = np.zeros(self.nbins)
+
     def _init_draw(self):
         lines = [self.line1, self.line1_tail, self.line1_head,self.line2, self.line2_tail, self.line2_head]
         for l in lines:
@@ -228,22 +228,22 @@ class CustomFigCanvas(FigureCanvas, TimedAnimation):
             self.x = np.roll(self.x, -1)
             self.x[-1] = self.xdata[0]
             del(self.xdata[0])
-            
+
             ax1_ind = np.where(np.diff(self.x)>0)[0]
             ax2_ind = np.where(np.diff(self.x)<0)[0]
-            
+
             #Now find the inds in the tail
             ax1_tail_ind = ax1_ind[-1*self.tlen:][np.where(ax1_ind[-1*self.tlen:]>len(self.x)-(self.tlen+2))] #tlen+2 to account for index offsets using np.diff
             ax2_tail_ind = ax2_ind[-1*self.tlen:][np.where(ax2_ind[-1*self.tlen:]>len(self.x)-(self.tlen+2))]
-    
+
             #Plot the base data
             self.line1.set_data(self.x[ax1_ind+1], self.y[ax1_ind+1])
             self.line2.set_data(self.x[ax2_ind+1], self.y[ax2_ind+1])
-            
+
             #Plot the (split) tail
             self.line1_tail.set_data(self.x[ax1_tail_ind+1],self.y[ax1_tail_ind+1]) #+1 to account for index offsets using np.diff
             self.line2_tail.set_data(self.x[ax2_tail_ind+1],self.y[ax2_tail_ind+1])
-            
+
             #Plot the head
             if len(self.x)-2 in ax1_ind:
                 self.line1_head.set_data(self.x[-1], self.y[-1])
@@ -251,234 +251,51 @@ class CustomFigCanvas(FigureCanvas, TimedAnimation):
             else:
                 self.line1_head.set_data([],[])
                 self.line2_head.set_data(self.x[-1], self.y[-1])
-            
+
             self._drawn_artists = [self.line1, self.line1_tail, self.line1_head,self.line2, self.line2_tail, self.line2_head]
 
-
 class Window(QMainWindow):
-    
     def __init__(self):
         super(Window,self).__init__()
-        self.setWindowTitle('FTS Controller')
         self.setGeometry(0,0,1920,1080)
         self.dpi = 100
-        self.icon_direc = 'C:/Users/Philip/Desktop/FTS_Software/Icons/'
+        self.icon_direc = '../Icons/'
         self.general_font = self.create_qfont('Lucidia',12)
         self.setWindowIcon(QIcon(self.icon_direc+'logo.png'))
         self.create_menu()
-        self.create_toolbar()
         self.create_main_frame()
-        self.show()
-        
-######################################################################################################################
-##########################################  DAQ Functions  ###########################################################
-###################################################################################################################### 
 
-      
-            
-    def on_clear(self):
-        self.f2.clear()
-        self.position_data = []
-        self.DAQ_data = []
-    
-    def on_pause(self):
-        if self.pause_btn.isChecked():
-            #self.pause_time = time.time()
-            #self.stop_stepper()
-            
-            try: #See if a scan is running and if it is, pause it
-                self.scanthread.pause()
-            except: #If error, then no scan running, so pass
-                pass
-        else:
-            #self.resume_time = time.time()
-            #if self.resume_time-self.pause_time<2:
-            #    time.sleep(2-(self.resume_time-self.pause_time))
-            #self.start_stepper()
-            try:
-                self.scanthread.resume()
-            except:
-                pass
-            
-    
-        
-######################################################################################################################
-########################################  Motor Functions  ###########################################################
-######################################################################################################################
-        
-    def update_plot(self, (valuex,valuey)):
-        self.f2.add_data(valuex,valuey)
+    ###########################################  Format Functions  #########################################################
+    ######################################################################################################################
 
-
-    def update_position(self,position):
-        self.position = position
-        self.position_box.setText('%.5f mm'%self.position)
-        
-    def update_status(self,text=None):
-        if text:
-            self.statusBar().showMessage(text)
-        else:
-            self.statusBar().showMessage(self.status_text)      
-        
-        
-    def run_scan(self,step_size,throw,num_samples,speed,sample_rate,li_time,
-                    thread_text='FTS_Software_v1.0', finished_text='FTS_Software_v1.0',
-                    signal=None, slot=None,
-                    plot_scan=False,plot_fft=False):  
-        
-        self.f2.update_nbins(throw,abs(step_size))
-        self.homed=False
-        self.at_zopd=False
-        self.DAQ.configure(num_samples,sample_rate)
-        if plot_scan:
-            self.position_data = []
-            self.DAQ_data = []        
-        self.update_status(thread_text)
-        self.status_text = finished_text
-        self.scanthread = ScanThread(self.motorLoop,self.motor,self.position_data,self.DAQ_data,self.DAQ,step_size,throw,speed,li_time,plot_scan)
-        self.scanthread.send_position.connect(self.update_position)
-        self.scanthread.send_data.connect(self.update_plot)
-        if signal and slot:
-            self.connect(self.scanthread, SIGNAL(signal), slot)        
-        if plot_fft:
-            self.connect(self.scanthread, SIGNAL("finished()"), self.update_status)
-        self.scanthread.start()
-
-    def find_zopd(self):
-        '''
-        Function to find and store the zero optical path difference location
-        '''
-        
-        #Check to make sure DAQ is started
-        try:
-            self.DAQ_channel = str(self.DAQchannel_combo.currentText())
-            self.DAQ = MultiChannelAnalogInput(self.DAQ_channel)
-        except:
-            self.statusBar().showMessage('Please make sure DAQ is connected')
-            return    
-        
-        '''
-        #Check stepper
-        try:    
-            self.stepper = serial.Serial('COM3',9600,timeout = 1)
-            time.sleep(2)            
-            self.start_stepper()            
-            time.sleep(10)
-        except:
-            time.sleep(2)            
-            self.start_stepper()            
-            time.sleep(10)
-        '''                                        
-        
-        #Make sure the axis has been homed
-        if not self.homed:
-            self.statusBar().showMessage('Please home axis first.')
-            return
-
-        #Update the status bar
-        self.statusBar().showMessage('Finding zero optical path difference.')
-        
-        #Create the slot to send the finished signal to for the offset scan
-        def zopd_scan():
-            thread_text = 'Finding zero optical path difference.'
-            finished_text = 'Finding zero optical path difference.'
-            self.run_scan(-1,150,2,5,400,self.li_time,thread_text,finished_text,"finished()",determine_zopd,True,False) #Slew 10mm to the left in steps of .1mm at 1mm/s
-            
-        #Create the slot to send the finsihed signal to for the ZODP scan
-        def determine_zopd():
-            self.DAQ_data = np.average(self.DAQ_data,axis=1)
-            self.zopd = 0.
-            self.statusBar().showMessage('Zero optical path difference found at %0.5f'%self.zopd)  
-            #self.stop_stepper()     
-        
-        #Now run the scan
-        status_text = 'Finding zero optical path difference.'
-        self.run_scan(5,75,2,5,400,self.li_time,status_text,status_text,"finished()",zopd_scan,False,False) #Slew 5mm to the right in steps of .1mm at 1mm/s
-
-        
-    def goto_zopd(self):
-        '''
-        Function to slew to the zero optical path difference point.
-        '''
-        if np.isnan(self.zopd):
-            self.statusBar().showMessage('Please find zero optical path difference first')
-            return
-        else:
-            try:      
-                self.motorLoop.pause()
-                self.motor.send('MOVEABS X%.3f XF%.3f\n'%(self.zopd,10))
-                response = self.motor.recv(1024)
-                if response=='%\n':
-                    self.statusBar().showMessage('Slewing to zero optical path difference')
-                    self.at_zopd = True
-                else:
-                    self.statusBar().showMessage('Error slewing to ZOPD!')
-                self.motorLoop.resume()   
-            except:
-                self.statusBar().showMessage('Error slewing to ZOPD!')    
-
-
-######################################################################################################################
-#######################################  Format Functions  ###########################################################
-######################################################################################################################        
-        
-    def add_actions(self,target,actions):
-        '''
-        Function to add multiple actions to a menu or toolbar at once.  If no action is provide (i.e. action==None)
-        then a simple separator is added.
-        
-        Inputs:
-            
-            - target: The widget to add the action to
-            
-            - action: The action to add to the widget
-        
-        '''
-        for action in actions:
-            if action is None:
-                target.addSeparator()
-            else:
-                target.addAction(action) 
-                
-    def add_space(self,target):
-        '''
-        Function to add space in between various actions or widgets of the target.  It adds space to expand to fill
-        the available size of the target.
-        '''
-        spacer = QWidget()
-        spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
-        target.addWidget(spacer)
-        
-    
-            
     def create_action(self,text,slot=None,shortcut=None,icon=None,
-                    tip=None,checkable=False,signal='triggered()',setStatus=False):                
+                    tip=None,checkable=False,signal='triggered()',setStatus=False):
         '''
         Function to create an action to be used in the GUI.  Actions are objects that perform a task when interacted
         with.  Almost all actions in thsi GUI will be signalled by a trigger (i.e. clicked).  Other actions include
         hovering, changing state or toggling (boolean state where checked=False)
-        
+
         Inputs:
-            
+
             - text: Text to appear on the button
-            
+
             - slot: The action to take when triggered.  Usually this points to another function
-            
+
             - shortcut: If provided, the keyboard shortcut can be used
-            
+
             - icon: Either the root name of the image to use (must be a .png file) or a QIcon object.  Only the name
-                    of the image is needed, because the directory is automatically applied with self.icon_direc. A 
+                    of the image is needed, because the directory is automatically applied with self.icon_direc. A
                     QIcon object permits the use of various images, depending on the state of the action.  All actions
                     in the GUI are enabled, but can either be active or inactive.
-                    
+
             - tip: A string of text to display while hovering over the action
-            
+
             - checkable: Allow the action to be either active or inactive by being pressed
-            
+
             - signal:  The signal to apply to the action.  Either triggered, changed, hovered, or toggled
-            
+
             - setStatus: If true, the status bar is also display the tip string
-        '''                                                                    
+        '''
         action = QAction(text, self)
         if icon is not None:
             if type(icon) is str:
@@ -489,13 +306,83 @@ class Window(QMainWindow):
             action.setShortcut(shortcut)
         if tip is not None:
             action.setToolTip(tip)
-            if setStatus: 
+            if setStatus:
                 action.setStatusTip(tip)
         if slot is not None:
             self.connect(action, SIGNAL(signal), slot)
         if checkable:
             action.setCheckable(True)
-        return action               
+        return action
+
+    def create_menu(self):
+        '''
+        Function to create the menu bar.  The menu bar typically takes actions that are words, such as 'Save As', but
+        can also take pictures, if desired.  Shortcuts for the actions are displayed with the action itself.
+
+        Here we add a file menu that can either save or quit and an about menu to provide details of the software.
+        '''
+        mainMenu = self.menuBar()
+
+        self.fileMenu = mainMenu.addMenu('&File')
+
+        quit_action = self.create_action('&Quit', slot=self.close,
+            shortcut='Ctrl+Q', tip='Close the application')
+
+        self.add_actions(self.fileMenu,(quit_action,))
+
+        helpMenu = mainMenu.addMenu('&Help')
+
+        about_action = self.create_action("&About",
+            shortcut='F1', slot=self.on_about, tip='About FTS Controller')
+
+        trouble_action = self.create_action("&Trouble Shooting",
+            shortcut='F2', slot=self.on_trouble, tip='Common errors/failures')
+
+        self.add_actions(helpMenu, (about_action,trouble_action,))
+
+    def add_actions(self,target,actions):
+        '''
+        Function to add multiple actions to a menu or toolbar at once.  If no action is provide (i.e. action==None)
+        then a simple separator is added.
+
+        Inputs:
+
+            - target: The widget to add the action to
+
+            - action: The action to add to the widget
+
+        '''
+        for action in actions:
+            if action is None:
+                target.addSeparator()
+            else:
+                target.addAction(action)
+
+    def create_status_bar(self,text):
+        '''
+        Very simple function to create the initial status bar and to display action tips.
+
+        Inputs:
+
+            - text: The text to be displayed on the status bar.
+        '''
+        self.status_text = QLabel(text)
+        self.statusBar().addWidget(self.status_text)
+
+    def update_status(self,text=None):
+        if text:
+            self.statusBar().showMessage(text)
+        else:
+            self.statusBar().showMessage(self.status_text)
+
+    def add_space(self,target):
+        '''
+        Function to add space in between various actions or widgets of the target.  It adds space to expand to fill
+        the available size of the target.
+        '''
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
+        target.addWidget(spacer)
 
 
     def create_figure(self,axbox=None,fig_size=(1,1),shareax=None,ax_off=True,disp_coords=True):
@@ -512,328 +399,52 @@ class Window(QMainWindow):
         if ax_off:
             a.set_axis_off()
         if axbox!=None:
-            a.set_position(axbox) 
-        if disp_coords:            
+            a.set_position(axbox)
+        if disp_coords:
             a.format_coord = lambda x,y:'%i %i'%(x,y)
             t = NavigationToolbar(c,self.main_frame)
         else:
             t = NavigationToolbar(c,self.main_frame,coordinates=False)
         return f,c,a,t
-    
-            
-    def create_main_frame(self):
-        '''
-        This is the function where all the additional functionality and layout of the GUI is defined.  Every button,
-        figure, and action is defined here and displayed using the builtin layout options of PyQt.  This allows for
-        dynamic resizing/positioning of the items in the GUI.
-        '''
-        self.main_frame = QWidget()
-        self.create_status_bar('FTS_Software_v1.0')
-        
-        #Create our various fonts
-        title_font = self.create_qfont('Lucidia',16,('underlined',))                
-                        
-        #Create the input form.  This is a long bit of code, but we use individual layouts to allow
-        #for better positioning freedom.
-        form = QVBoxLayout()
-        form.addStretch()
-        
-        #First we add the title line
-        title1 = self.create_qlabel('Input Parameters',375,20,'center',title_font)
-        form.addWidget(title1)
-        
-        #Add the speed box
-        speed_box = QHBoxLayout()
-        speed_box.setSpacing(0)
-        speed_label = self.create_qlabel('Scan Speed:',120,20,'left',self.general_font)
-        self.speed_line = self.create_qline(150,20,font=self.general_font)
-        speed_box.addWidget(speed_label)
-        speed_box.addWidget(self.speed_line)
-        speed_box.addWidget(self.create_qlabel(' [mm/s]',120,20,'left',self.general_font))
-        speed_box.addStretch()
-        form.addLayout(speed_box)
-        
-        #Add the filter description box
-        filtname_box = QHBoxLayout()
-        filtname_box.setSpacing(0)
-        filtname_label = self.create_qlabel('Filter Name:',120,20,'left',self.general_font)
-        self.filtname_line = self.create_qline(215,20,font=self.general_font)
-        filtname_box.addWidget(filtname_label)
-        filtname_box.addWidget(self.filtname_line)
-        filtname_box.addStretch()
-        form.addLayout(filtname_box)
-        
-        #Add the filter position box
-        filtpos_box = QHBoxLayout()
-        filtpos_box.setSpacing(0)
-        filtpos_label = self.create_qlabel('Filter Position:',120,20,'left',self.general_font)
-        self.filtpos_combo = QComboBox()
-        self.filtpos_combo.addItems(['Position 1','Position 2','Position 3',
-                                     'Position 4','Position 5','Posiiton 6'])
-        self.filtpos_combo.setFixedWidth(215)
-        self.filtpos_combo.setFont(self.general_font)
-        filtpos_box.addWidget(filtpos_label)
-        filtpos_box.addWidget(self.filtpos_combo)
-        filtpos_box.addStretch()
-        form.addLayout(filtpos_box)
-        
-        #Add the DAQ Channel Box
-        DAQchannel_box = QHBoxLayout()
-        DAQchannel_box.setSpacing(0)
-        DAQchannel_label = self.create_qlabel('DAQ Setup:',120,20,'left',self.general_font)
-        self.DAQchannel_combo = QComboBox()
-        self.DAQchannel_combo.addItems(['Dev1/ai0','Dev1/ai1','Dev1/ai2', 'Dev1/ai3'])
-        self.DAQchannel_combo.setFixedWidth(215)
-        self.DAQchannel_combo.setFont(self.general_font)
-        DAQchannel_box.addWidget(DAQchannel_label)
-        DAQchannel_box.addWidget(self.DAQchannel_combo)
-        DAQchannel_box.addStretch()
-        form.addLayout(DAQchannel_box)
-        
-        #Add the distance of the throw box
-        throw_box = QHBoxLayout()
-        throw_box.setSpacing(0)
-        throw_label = self.create_qlabel('Throw Distance:',120,20,'left',self.general_font)
-        self.throw_line = self.create_qline(150,20,font=self.general_font)
-        throw_box.addWidget(throw_label)
-        throw_box.addWidget(self.throw_line)
-        throw_box.addWidget(self.create_qlabel(' [mm]',120,20,'left',self.general_font))
-        throw_box.addStretch()
-        form.addLayout(throw_box)
-        
-        #Add the steps box
-        step_box = QHBoxLayout()
-        step_box.setSpacing(0)
-        step_label = self.create_qlabel('Step Size:',120,20,'left',self.general_font)
-        self.step_line = self.create_qline(150,20,font=self.general_font)
-        step_box.addWidget(step_label)
-        step_box.addWidget(self.step_line)
-        step_box.addWidget(self.create_qlabel(' [mm]',120,20,'left',self.general_font))
-        step_box.addStretch()
-        form.addLayout(step_box)
-        
-        #Add the samples box
-        sample_box = QHBoxLayout()
-        sample_box.setSpacing(0)
-        sample_label = self.create_qlabel('# Samples:',120,20,'left',self.general_font)
-        self.sample_line = self.create_qline(215,20,font=self.general_font)
-        sample_box.addWidget(sample_label)
-        sample_box.addWidget(self.sample_line)
-        sample_box.addStretch()
-        form.addLayout(sample_box)
-        
-        #Add the sample rate box
-        samp_rate_box = QHBoxLayout()
-        samp_rate_box.setSpacing(0)
-        samp_rate_label = self.create_qlabel('Sampling Rate:',120,20,'left',self.general_font)
-        self.samp_rate_line = self.create_qline(150,20,font=self.general_font)
-        samp_rate_box.addWidget(samp_rate_label)
-        samp_rate_box.addWidget(self.samp_rate_line)
-        samp_rate_box.addWidget(self.create_qlabel(' [Hz]',120,20,'left',self.general_font))
-        samp_rate_box.addStretch()
-        form.addLayout(samp_rate_box)
-        
-        #Add the chop_rate speed box
-        chop_rate_box = QHBoxLayout()
-        chop_rate_box.setSpacing(0)
-        chop_rate_label = self.create_qlabel('Chop Rate:',120,20,'left',self.general_font)
-        self.chop_rate_line = self.create_qline(150,20,font=self.general_font)
-        chop_rate_box.addWidget(chop_rate_label)
-        chop_rate_box.addWidget(self.chop_rate_line)
-        chop_rate_box.addWidget(self.create_qlabel(' [Hz]',120,20,'left',self.general_font))
-        chop_rate_box.addStretch()
-        form.addLayout(chop_rate_box)        
-        
-        #Add the save file box
-        save_box = QHBoxLayout()
-        save_box.setSpacing(0)
-        save_label = self.create_qlabel('Save File:',120,20,'left',self.general_font)
-        self.save_line = self.create_qline(150,20,font=self.general_font)
-        self.selectSave_btn = self.create_qpushbutton('Select',self.open_save,width=65,height=22,font=self.general_font)
-        save_box.addWidget(save_label)
-        save_box.addWidget(self.save_line)
-        save_box.addWidget(self.selectSave_btn)
-        save_box.addStretch()
-        form.addLayout(save_box)
-        
-        #Add the source description box
-        source_box = QHBoxLayout()
-        source_box.setSpacing(0)
-        source_label = self.create_qlabel('Source:',120,20,'left',self.general_font)
-        self.source_line = self.create_qline(120,20,font=self.general_font)
-        source_box.addWidget(source_label)
-        source_box.addWidget(self.source_line)
-        source_box.addWidget(self.create_qlabel(' @ ',30,20,'left',self.general_font))
-        self.source_temp_line = self.create_qline(45,20,font=self.general_font)
-        source_box.addWidget(self.source_temp_line)
-        source_box.addWidget(self.create_qlabel(' K',20,20,'left',self.general_font))
-        source_box.addStretch()
-        form.addLayout(source_box)
-        
-        #Add the detector pressure box
-        #Will be used to convert to temperature
-        press_box = QHBoxLayout()
-        press_box.setSpacing(0)
-        press_label = self.create_qlabel('Detect Press:',120,20,'left',self.general_font)
-        self.press_line = self.create_qline(155,20,font=self.general_font)
-        press_box.addWidget(press_label)
-        press_box.addWidget(self.press_line)
-        press_box.addWidget(self.create_qlabel(' mbar',60,20,'left',self.general_font))
-        press_box.addStretch()
-        form.addLayout(press_box)
-        
-        #Add the filter position box
-        gain_box = QHBoxLayout()
-        gain_box.setSpacing(0)
-        gain_label = self.create_qlabel('Detector Gain:',120,20,'left',self.general_font)
-        self.gain_combo = QComboBox()
-        self.gain_combo.addItems(['200','1000'])
-        self.gain_combo.setFixedWidth(215)
-        self.gain_combo.setFont(self.general_font)
-        gain_box.addWidget(gain_label)
-        gain_box.addWidget(self.gain_combo)
-        gain_box.addStretch()
-        form.addLayout(gain_box)
-        
-        #Add the lock-in sensitivity box
-        li_sens_box = QHBoxLayout()
-        li_sens_box.setSpacing(0)
-        li_sens_label = self.create_qlabel('LI Sensitivity:',120,20,'left',self.general_font)
-        self.li_sens_line = self.create_qline(150,20,font=self.general_font)
-        li_sens_items = ['V','mV','uV','nV']
-        self.li_sens_combo = self.create_qcombobox(li_sens_items,65,20,self.general_font,1)
-        li_sens_box.addWidget(li_sens_label)
-        li_sens_box.addWidget(self.li_sens_line)
-        li_sens_box.addWidget(self.li_sens_combo)
-        li_sens_box.addStretch()
-        form.addLayout(li_sens_box)
-        
-        #Add the lock-in time constant box
-        li_time_box = QHBoxLayout()
-        li_time_box.setSpacing(0)
-        li_time_label = self.create_qlabel('LI Time Const:',120,20,'left',self.general_font)
-        self.li_time_line = self.create_qline(150,20,font=self.general_font)
-        li_time_items = ['ks','s','ms','us']
-        self.li_time_combo = self.create_qcombobox(li_time_items,65,20,self.general_font,2)
-        li_time_box.addWidget(li_time_label)
-        li_time_box.addWidget(self.li_time_line)
-        li_time_box.addWidget(self.li_time_combo)
-        li_time_box.addStretch()
-        form.addLayout(li_time_box)
-        
-        #Add the filter description box
-        note_box = QHBoxLayout()
-        note_box.setSpacing(0)
-        note_label = self.create_qlabel('Notes:',120,20,'left',self.general_font)
-        self.note_line = self.create_qline(215,20,font=self.general_font)
-        note_box.addWidget(note_label)
-        note_box.addWidget(self.note_line)
-        note_box.addStretch()
-        form.addLayout(note_box)
-        
-        #Space to look nice
-        form.addSpacing(50)
-        
-        #Create the buttons
-        self.clear_btn = self.create_qpushbutton('Clear',self.on_clear,height=25,font=self.general_font)
-        self.abort_btn2 = self.create_qpushbutton('Abort',self.send_abort,height=25,font=self.general_font)        
-        self.submit_btn = self.create_qpushbutton('Submit',self.on_submit,height=25,font=self.general_font)
-        self.pause_btn = self.create_qpushbutton('Pause',self.on_pause,height=25,font=self.general_font,checkable=True)
-        self.find_zopd_btn = self.create_qpushbutton('Find ZOPD',self.find_zopd,height=25,font=self.general_font)        
-        self.goto_zopd_btn = self.create_qpushbutton('Go To ZOPD',self.goto_zopd,height=25,font=self.general_font)
-        self.reverse_btn = self.create_qpushbutton('Reverse',self.on_pause,height=25,font=self.general_font,checkable=True)
-       
-        btn_box1 = QHBoxLayout()
-        btn_box1.addWidget(self.clear_btn)
-        btn_box1.addWidget(self.submit_btn)
-        form.addLayout(btn_box1)  
-        
-        #Create the second button row
 
-        btn_box2 = QHBoxLayout()
-        btn_box2.addWidget(self.pause_btn)
-        btn_box2.addWidget(self.abort_btn2)
-        form.addLayout(btn_box2) 
-        
-        btn_box3 = QHBoxLayout()
-        btn_box3.addWidget(self.find_zopd_btn)
-        btn_box3.addWidget(self.goto_zopd_btn)
-        form.addLayout(btn_box3) 
-        
-        btn_box4 = QHBoxLayout()
-        btn_box4.addWidget(self.reverse_btn)
-        form.addLayout(btn_box4) 
+    ###########################################  Menu Functions  #########################################################
+    ######################################################################################################################
+    def on_about(self):
+        return
 
-        form.addStretch()
-        
-        #Next we create the figures
-        self.f1,self.c1,self.a1,self.t1 = self.create_figure(axbox=[.025,.06,.95,.9],fig_size=(16,4),ax_off=False,disp_coords=False)
-        self.f2 = CustomFigCanvas()
-        #self.f2,self.c2,self.a2,self.t2 = self.create_figure(axbox=[.025,.06,.95,.9],fig_size=(16,4),ax_off=False,disp_coords=False)
-        #self.a2.set_axis_bgcolor((1, 1, 1))
-        
-        figs = QVBoxLayout()
-        figs.addWidget(self.t1)
-        figs.addWidget(self.c1)
-        figs.addWidget(self.f2)
-        #figs.addWidget(self.t2)
-        #figs.addWidget(self.c2)
-        
-        #Add the rest of the layouts
-        final_layout = QHBoxLayout()
-        final_layout.addLayout(form)
-        final_layout.addSpacing(12)
-        final_layout.addLayout(figs)
+    def closeEvent(self, event):
+        reply = QMessageBox.question(self, 'Confirm Quit',
+            "Are you sure you want to quit?", QMessageBox.Yes |
+            QMessageBox.No, QMessageBox.No)
 
-        #Set the GUI in the main frame
-        self.main_frame.setLayout(final_layout)        
-        self.setCentralWidget(self.main_frame)
-        
-    
-    def create_menu(self):
-        '''
-        Function to create the menu bar.  The menu bar typically takes actions that are words, such as 'Save As', but
-        can also take pictures, if desired.  Shortcuts for the actions are displayed with the action itself.
-        
-        Here we add a file menu that can either save or quit and an about menu to provide details of the software.
-        '''
-        mainMenu = self.menuBar()
-        
-        fileMenu = mainMenu.addMenu('&File')
-        
-        quit_action = self.create_action('&Quit', slot=self.close, 
-            shortcut='Ctrl+Q', tip='Close the application')
-            
-        save_action = self.create_action('&Save As', slot=self.save,
-            shortcut='Ctrl+S',tip='Save the current output')
-                
-        self.add_actions(fileMenu,(quit_action,save_action,))
-        
-        helpMenu = mainMenu.addMenu('&Help')
-        
-        about_action = self.create_action("&About", 
-            shortcut='F1', slot=self.on_about, tip='About FTS Controller')
-            
-        trouble_action = self.create_action("&Trouble Shooting", 
-            shortcut='F2', slot=self.on_trouble, tip='Common errors/failures')
-        
-        self.add_actions(helpMenu, (about_action,trouble_action,))
-        
-        
+        if reply == QMessageBox.Yes:
+            event.accept()
+        else:
+            event.ignore()
+
+    def on_trouble(self):
+        return
+
+    def save(self):
+        return
+
+#################################################################################################################
+########################################## Create QObject Functions #############################################
+#################################################################################################################
     def create_qcombobox(self,items,width=None,height=None,font=None,start_ind=None):
         '''
         Function to create a QComboBox object
-        
+
         Inputs:
-            
+
             - items: The list of labels to be included in the combo box
-            
+
             - width: The width of the combo box
-            
+
             - height: The height of the combo box
-            
+
             - font: The font to be used on the items in the combo box
-            
+
             - start_ind: The starting index (i.e. item in the list) for the combo box
         '''
         combo = QComboBox()
@@ -846,21 +457,21 @@ class Window(QMainWindow):
             combo.setFont(font)
         if start_ind is not None:
             combo.setCurrentIndex(start_ind)
-            
+
         return combo
-        
-        
+
+
     def create_qfont(self,font,size=None,formats=None):
         '''
         Function to create a font object to be used throughout the GUI.  Possible options
         are font type, size, and format.
-        
+
         Inputs:
-            
+
             - font: String of the font to use for the QFont object
-            
+
             - size: Size of the font to be used.
-            
+
             - formats: List of formats for the label.  Either italic, bold, or underlined.
         '''
         qfont = QFont(font)
@@ -877,16 +488,16 @@ class Window(QMainWindow):
                 else:
                     pass
         return qfont
-        
-          
+
+
     def create_qicon(self,on,off):
         '''
         Function to create a QIcon object to be used with the create_action function.
-        
+
         Inputs:
-            
+
             - on: Root name of the image to be used when the action is in an active state
-            
+
             - off: Root name of the image to be used when the action is in a disabled state
         '''
         qicon = QIcon()
@@ -895,26 +506,26 @@ class Window(QMainWindow):
         qicon.addPixmap(QPixmap(self.icon_direc+"%s.png" % off),
                         QIcon.Normal, QIcon.Off)
         return qicon
-     
-           
+
+
     def create_qlabel(self,text,width=None,height=None,alignment=None,font=None,style=None):
         '''
         Function to create a QLabel object to be used the for the parameter
         input form. since most parameters will use this format.  It defaults to the parent
         spacings, if they are not defined.
-        
+
         Inputs:
-            
+
             - text - The text to be displayed on the label
-            
+
             - width - The width of the button
-            
+
             - height - The height of the button
-            
+
             - alignment - 'left', 'center', or 'right'
-            
+
             - font - The QFont object to be used
-            
+
             - style - The style string to be used
         '''
         qlabel = QLabel(text)
@@ -938,24 +549,24 @@ class Window(QMainWindow):
             qlabel.setFont(font)
         if style is not None:
             qlabel.setStyleSheet(style)
-            
-        return qlabel     
-     
+
+        return qlabel
+
     def create_qline(self,width=None,height=None,font=None,style=None):
         '''
         Simple function to make a QLineEdit object of a given width and height.
-        
+
         Inputs:
-            
+
             - width: The width of the QLineEdit field
-            
+
             - height: The height of the QLineEdit field
-            
+
             - font: The font to be used in the QLineEdit field
-            
+
             - style: String of the style for the QLineEdit field
         '''
-        
+
         qline = QLineEdit()
         if width is not None:
             qline.setFixedWidth(width)
@@ -964,30 +575,30 @@ class Window(QMainWindow):
             qline.setFont(font)
         if style is not None:
             qline.setStyleSheet(style)
-        
+
         return qline
-        
+
     def create_qpushbutton(self,text, slot, width=None,height=None,font=None,style=None,
                             checkable=False, return_type=None):
         '''
         Another simple function to make a QPushButton object, with given stylistic inputs
-        
+
         Inputs:
-            
+
             - text: The text to be displayed on the button
-            
+
             - slot: The function that is called when the button is pressed
-            
+
             - width: The width of the button
-            
+
             - height: The height of the button
-            
+
             - font: The font to be used on the button
-            
+
             - style: String of the style to be used for the button
-            
+
             - checkable: Sets whether or not the button is checkable (i.e. if the state can be held)
-            
+
             - return_type: Overwrites the default return type of the button.  Either int, str, float,
                            or bool are accepted.  The most common use will be to state whether that a
                            checkable button should return a boolean. (True is enabled, False if disabled)
@@ -1007,28 +618,446 @@ class Window(QMainWindow):
             qpushbutton.clicked[return_type].connect(slot)
         else:
             qpushbutton.clicked.connect(slot)
-        
+
         return qpushbutton
-     
-        
-    def create_status_bar(self,text):
+
+
+class ControlWindow(Window):
+    def __init__(self):
+        super(ControlWindow,self).__init__()
+        self.setWindowTitle('FTS Controller')
+        self.create_toolbar()
+        self.show()
+
+######################################################################################################################
+##########################################  DAQ Functions  ###########################################################
+######################################################################################################################
+
+
+
+    def on_clear(self):
+        self.f2.clear()
+        self.position_data = []
+        self.DAQ_data = []
+
+    def on_pause(self):
+        if self.pause_btn.isChecked():
+            #self.pause_time = time.time()
+            #self.stop_stepper()
+
+            try: #See if a scan is running and if it is, pause it
+                self.scanthread.pause()
+            except: #If error, then no scan running, so pass
+                pass
+        else:
+            #self.resume_time = time.time()
+            #if self.resume_time-self.pause_time<2:
+            #    time.sleep(2-(self.resume_time-self.pause_time))
+            #self.start_stepper()
+            try:
+                self.scanthread.resume()
+            except:
+                pass
+
+
+
+######################################################################################################################
+########################################  Motor Functions  ###########################################################
+######################################################################################################################
+
+    def update_plot(self, (valuex,valuey)):
+        self.f2.add_data(valuex,valuey)
+
+
+    def update_position(self,position):
+        self.position = position
+        self.position_box.setText('%.5f mm'%self.position)
+
+
+    def run_scan(self,step_size,throw,num_samples,speed,sample_rate,li_time,
+                    thread_text='FTS_Software_v1.0', finished_text='FTS_Software_v1.0',
+                    signal=None, slot=None,
+                    plot_scan=False,plot_fft=False):
+
+        self.f2.update_nbins(throw,abs(step_size))
+        self.homed=False
+        self.at_zopd=False
+        self.DAQ.configure(num_samples,sample_rate)
+        if plot_scan:
+            self.position_data = []
+            self.DAQ_data = []
+        self.update_status(thread_text)
+        self.status_text = finished_text
+        self.scanthread = ScanThread(self.motorLoop,self.motor,self.position_data,self.DAQ_data,self.DAQ,step_size,throw,speed,li_time,plot_scan)
+        self.scanthread.send_position.connect(self.update_position)
+        self.scanthread.send_data.connect(self.update_plot)
+        if signal and slot:
+            self.connect(self.scanthread, SIGNAL(signal), slot)
+        if plot_fft:
+            self.connect(self.scanthread, SIGNAL("finished()"), self.update_status)
+        self.scanthread.start()
+
+    def find_zopd(self):
         '''
-        Very simple function to create the initial status bar and to display action tips.
-        
-        Inputs:
-            
-            - text: The text to be displayed on the status bar.
+        Function to find and store the zero optical path difference location
         '''
-        self.status_text = QLabel(text)
-        self.statusBar().addWidget(self.status_text)
-        
-                 
+
+        #Check to make sure DAQ is started
+        try:
+            self.DAQ_channel = str(self.DAQchannel_combo.currentText())
+#            self.DAQ = MultiChannelAnalogInput(self.DAQ_channel)
+        except:
+            self.statusBar().showMessage('Please make sure DAQ is connected')
+            return
+
+        '''
+        #Check stepper
+        try:
+            self.stepper = serial.Serial('COM3',9600,timeout = 1)
+            time.sleep(2)
+            self.start_stepper()
+            time.sleep(10)
+        except:
+            time.sleep(2)
+            self.start_stepper()
+            time.sleep(10)
+        '''
+
+        #Make sure the axis has been homed
+        if not self.homed:
+            self.statusBar().showMessage('Please home axis first.')
+            return
+
+        #Update the status bar
+        self.statusBar().showMessage('Finding zero optical path difference.')
+
+        #Create the slot to send the finished signal to for the offset scan
+        def zopd_scan():
+            thread_text = 'Finding zero optical path difference.'
+            finished_text = 'Finding zero optical path difference.'
+            self.run_scan(-1,150,2,5,400,self.li_time,thread_text,finished_text,"finished()",determine_zopd,True,False) #Slew 10mm to the left in steps of .1mm at 1mm/s
+
+        #Create the slot to send the finsihed signal to for the ZODP scan
+        def determine_zopd():
+            self.DAQ_data = np.average(self.DAQ_data,axis=1)
+            self.zopd = 0.
+            self.statusBar().showMessage('Zero optical path difference found at %0.5f'%self.zopd)
+            #self.stop_stepper()
+
+        #Now run the scan
+        status_text = 'Finding zero optical path difference.'
+        self.run_scan(5,75,2,5,400,self.li_time,status_text,status_text,"finished()",zopd_scan,False,False) #Slew 5mm to the right in steps of .1mm at 1mm/s
+
+
+    def goto_zopd(self):
+        '''
+        Function to slew to the zero optical path difference point.
+        '''
+        if np.isnan(self.zopd):
+            self.statusBar().showMessage('Please find zero optical path difference first')
+            return
+        else:
+            try:
+                self.motorLoop.pause()
+                self.motor.send('MOVEABS X%.3f XF%.3f\n'%(self.zopd,10))
+                response = self.motor.recv(1024)
+                if response=='%\n':
+                    self.statusBar().showMessage('Slewing to zero optical path difference')
+                    self.at_zopd = True
+                else:
+                    self.statusBar().showMessage('Error slewing to ZOPD!')
+                self.motorLoop.resume()
+            except:
+                self.statusBar().showMessage('Error slewing to ZOPD!')
+
+
+######################################################################################################################
+#######################################  Format Functions  ###########################################################
+######################################################################################################################
+
+    def create_menu(self):
+        super(ControlWindow, self).create_menu()
+        save_action = self.create_action('&Save As', slot=self.save,
+            shortcut='Ctrl+S',tip='Save the current output')
+
+        self.add_actions(self.fileMenu,(save_action,))
+
+
+    def create_main_frame(self):
+        '''
+        This is the function where all the additional functionality and layout of the GUI is defined.  Every button,
+        figure, and action is defined here and displayed using the builtin layout options of PyQt.  This allows for
+        dynamic resizing/positioning of the items in the GUI.
+        '''
+        self.main_frame = QWidget()
+        self.create_status_bar('FTS_Software_v1.0')
+
+        #Create our various fonts
+        title_font = self.create_qfont('Lucidia',16,('underlined',))
+
+        #Create the input form.  This is a long bit of code, but we use individual layouts to allow
+        #for better positioning freedom.
+        form = QVBoxLayout()
+        form.addStretch()
+
+        #First we add the title line
+        title1 = self.create_qlabel('Input Parameters',375,20,'center',title_font)
+        form.addWidget(title1)
+
+        #Add the speed box
+        speed_box = QHBoxLayout()
+        speed_box.setSpacing(0)
+        speed_label = self.create_qlabel('Scan Speed:',120,20,'left',self.general_font)
+        self.speed_line = self.create_qline(150,20,font=self.general_font)
+        speed_box.addWidget(speed_label)
+        speed_box.addWidget(self.speed_line)
+        speed_box.addWidget(self.create_qlabel(' [mm/s]',120,20,'left',self.general_font))
+        speed_box.addStretch()
+        form.addLayout(speed_box)
+
+        #Add the filter description box
+        filtname_box = QHBoxLayout()
+        filtname_box.setSpacing(0)
+        filtname_label = self.create_qlabel('Filter Name:',120,20,'left',self.general_font)
+        self.filtname_line = self.create_qline(215,20,font=self.general_font)
+        filtname_box.addWidget(filtname_label)
+        filtname_box.addWidget(self.filtname_line)
+        filtname_box.addStretch()
+        form.addLayout(filtname_box)
+
+        #Add the filter position box
+        filtpos_box = QHBoxLayout()
+        filtpos_box.setSpacing(0)
+        filtpos_label = self.create_qlabel('Filter Position:',120,20,'left',self.general_font)
+        self.filtpos_combo = QComboBox()
+        self.filtpos_combo.addItems(['Position 1','Position 2','Position 3',
+                                     'Position 4','Position 5','Posiiton 6'])
+        self.filtpos_combo.setFixedWidth(215)
+        self.filtpos_combo.setFont(self.general_font)
+        filtpos_box.addWidget(filtpos_label)
+        filtpos_box.addWidget(self.filtpos_combo)
+        filtpos_box.addStretch()
+        form.addLayout(filtpos_box)
+
+        #Add the DAQ Channel Box
+        DAQchannel_box = QHBoxLayout()
+        DAQchannel_box.setSpacing(0)
+        DAQchannel_label = self.create_qlabel('DAQ Setup:',120,20,'left',self.general_font)
+        self.DAQchannel_combo = QComboBox()
+        self.DAQchannel_combo.addItems(['Dev1/ai0','Dev1/ai1','Dev1/ai2', 'Dev1/ai3'])
+        self.DAQchannel_combo.setFixedWidth(215)
+        self.DAQchannel_combo.setFont(self.general_font)
+        DAQchannel_box.addWidget(DAQchannel_label)
+        DAQchannel_box.addWidget(self.DAQchannel_combo)
+        DAQchannel_box.addStretch()
+        form.addLayout(DAQchannel_box)
+
+        #Add the distance of the throw box
+        throw_box = QHBoxLayout()
+        throw_box.setSpacing(0)
+        throw_label = self.create_qlabel('Throw Distance:',120,20,'left',self.general_font)
+        self.throw_line = self.create_qline(150,20,font=self.general_font)
+        throw_box.addWidget(throw_label)
+        throw_box.addWidget(self.throw_line)
+        throw_box.addWidget(self.create_qlabel(' [mm]',120,20,'left',self.general_font))
+        throw_box.addStretch()
+        form.addLayout(throw_box)
+
+        #Add the steps box
+        step_box = QHBoxLayout()
+        step_box.setSpacing(0)
+        step_label = self.create_qlabel('Step Size:',120,20,'left',self.general_font)
+        self.step_line = self.create_qline(150,20,font=self.general_font)
+        step_box.addWidget(step_label)
+        step_box.addWidget(self.step_line)
+        step_box.addWidget(self.create_qlabel(' [mm]',120,20,'left',self.general_font))
+        step_box.addStretch()
+        form.addLayout(step_box)
+
+        #Add the samples box
+        sample_box = QHBoxLayout()
+        sample_box.setSpacing(0)
+        sample_label = self.create_qlabel('# Samples:',120,20,'left',self.general_font)
+        self.sample_line = self.create_qline(215,20,font=self.general_font)
+        sample_box.addWidget(sample_label)
+        sample_box.addWidget(self.sample_line)
+        sample_box.addStretch()
+        form.addLayout(sample_box)
+
+        #Add the sample rate box
+        samp_rate_box = QHBoxLayout()
+        samp_rate_box.setSpacing(0)
+        samp_rate_label = self.create_qlabel('Sampling Rate:',120,20,'left',self.general_font)
+        self.samp_rate_line = self.create_qline(150,20,font=self.general_font)
+        samp_rate_box.addWidget(samp_rate_label)
+        samp_rate_box.addWidget(self.samp_rate_line)
+        samp_rate_box.addWidget(self.create_qlabel(' [Hz]',120,20,'left',self.general_font))
+        samp_rate_box.addStretch()
+        form.addLayout(samp_rate_box)
+
+        #Add the chop_rate speed box
+        chop_rate_box = QHBoxLayout()
+        chop_rate_box.setSpacing(0)
+        chop_rate_label = self.create_qlabel('Chop Rate:',120,20,'left',self.general_font)
+        self.chop_rate_line = self.create_qline(150,20,font=self.general_font)
+        chop_rate_box.addWidget(chop_rate_label)
+        chop_rate_box.addWidget(self.chop_rate_line)
+        chop_rate_box.addWidget(self.create_qlabel(' [Hz]',120,20,'left',self.general_font))
+        chop_rate_box.addStretch()
+        form.addLayout(chop_rate_box)
+
+        #Add the save file box
+        save_box = QHBoxLayout()
+        save_box.setSpacing(0)
+        save_label = self.create_qlabel('Save File:',120,20,'left',self.general_font)
+        self.save_line = self.create_qline(150,20,font=self.general_font)
+        self.selectSave_btn = self.create_qpushbutton('Select',self.open_save,width=65,height=22,font=self.general_font)
+        save_box.addWidget(save_label)
+        save_box.addWidget(self.save_line)
+        save_box.addWidget(self.selectSave_btn)
+        save_box.addStretch()
+        form.addLayout(save_box)
+
+        #Add the source description box
+        source_box = QHBoxLayout()
+        source_box.setSpacing(0)
+        source_label = self.create_qlabel('Source:',120,20,'left',self.general_font)
+        self.source_line = self.create_qline(120,20,font=self.general_font)
+        source_box.addWidget(source_label)
+        source_box.addWidget(self.source_line)
+        source_box.addWidget(self.create_qlabel(' @ ',30,20,'left',self.general_font))
+        self.source_temp_line = self.create_qline(45,20,font=self.general_font)
+        source_box.addWidget(self.source_temp_line)
+        source_box.addWidget(self.create_qlabel(' K',20,20,'left',self.general_font))
+        source_box.addStretch()
+        form.addLayout(source_box)
+
+        #Add the detector pressure box
+        #Will be used to convert to temperature
+        press_box = QHBoxLayout()
+        press_box.setSpacing(0)
+        press_label = self.create_qlabel('Detect Press:',120,20,'left',self.general_font)
+        self.press_line = self.create_qline(155,20,font=self.general_font)
+        press_box.addWidget(press_label)
+        press_box.addWidget(self.press_line)
+        press_box.addWidget(self.create_qlabel(' mbar',60,20,'left',self.general_font))
+        press_box.addStretch()
+        form.addLayout(press_box)
+
+        #Add the filter position box
+        gain_box = QHBoxLayout()
+        gain_box.setSpacing(0)
+        gain_label = self.create_qlabel('Detector Gain:',120,20,'left',self.general_font)
+        self.gain_combo = QComboBox()
+        self.gain_combo.addItems(['200','1000'])
+        self.gain_combo.setFixedWidth(215)
+        self.gain_combo.setFont(self.general_font)
+        gain_box.addWidget(gain_label)
+        gain_box.addWidget(self.gain_combo)
+        gain_box.addStretch()
+        form.addLayout(gain_box)
+
+        #Add the lock-in sensitivity box
+        li_sens_box = QHBoxLayout()
+        li_sens_box.setSpacing(0)
+        li_sens_label = self.create_qlabel('LI Sensitivity:',120,20,'left',self.general_font)
+        self.li_sens_line = self.create_qline(150,20,font=self.general_font)
+        li_sens_items = ['V','mV','uV','nV']
+        self.li_sens_combo = self.create_qcombobox(li_sens_items,65,20,self.general_font,1)
+        li_sens_box.addWidget(li_sens_label)
+        li_sens_box.addWidget(self.li_sens_line)
+        li_sens_box.addWidget(self.li_sens_combo)
+        li_sens_box.addStretch()
+        form.addLayout(li_sens_box)
+
+        #Add the lock-in time constant box
+        li_time_box = QHBoxLayout()
+        li_time_box.setSpacing(0)
+        li_time_label = self.create_qlabel('LI Time Const:',120,20,'left',self.general_font)
+        self.li_time_line = self.create_qline(150,20,font=self.general_font)
+        li_time_items = ['ks','s','ms','us']
+        self.li_time_combo = self.create_qcombobox(li_time_items,65,20,self.general_font,2)
+        li_time_box.addWidget(li_time_label)
+        li_time_box.addWidget(self.li_time_line)
+        li_time_box.addWidget(self.li_time_combo)
+        li_time_box.addStretch()
+        form.addLayout(li_time_box)
+
+        #Add the filter description box
+        note_box = QHBoxLayout()
+        note_box.setSpacing(0)
+        note_label = self.create_qlabel('Notes:',120,20,'left',self.general_font)
+        self.note_line = self.create_qline(215,20,font=self.general_font)
+        note_box.addWidget(note_label)
+        note_box.addWidget(self.note_line)
+        note_box.addStretch()
+        form.addLayout(note_box)
+
+        #Space to look nice
+        form.addSpacing(50)
+
+        #Create the buttons
+        self.clear_btn = self.create_qpushbutton('Clear',self.on_clear,height=25,font=self.general_font)
+        self.abort_btn2 = self.create_qpushbutton('Abort',self.send_abort,height=25,font=self.general_font)
+        self.submit_btn = self.create_qpushbutton('Submit',self.on_submit,height=25,font=self.general_font)
+        self.pause_btn = self.create_qpushbutton('Pause',self.on_pause,height=25,font=self.general_font,checkable=True)
+        self.find_zopd_btn = self.create_qpushbutton('Find ZOPD',self.find_zopd,height=25,font=self.general_font)
+        self.goto_zopd_btn = self.create_qpushbutton('Go To ZOPD',self.goto_zopd,height=25,font=self.general_font)
+        self.reverse_btn = self.create_qpushbutton('Reverse',self.on_pause,height=25,font=self.general_font,checkable=True)
+
+        btn_box1 = QHBoxLayout()
+        btn_box1.addWidget(self.clear_btn)
+        btn_box1.addWidget(self.submit_btn)
+        form.addLayout(btn_box1)
+
+        #Create the second button row
+
+        btn_box2 = QHBoxLayout()
+        btn_box2.addWidget(self.pause_btn)
+        btn_box2.addWidget(self.abort_btn2)
+        form.addLayout(btn_box2)
+
+        btn_box3 = QHBoxLayout()
+        btn_box3.addWidget(self.find_zopd_btn)
+        btn_box3.addWidget(self.goto_zopd_btn)
+        form.addLayout(btn_box3)
+
+        btn_box4 = QHBoxLayout()
+        btn_box4.addWidget(self.reverse_btn)
+        form.addLayout(btn_box4)
+
+        form.addStretch()
+
+        #Next we create the figures
+        self.f1,self.c1,self.a1,self.t1 = self.create_figure(axbox=[.025,.06,.95,.9],fig_size=(16,4),ax_off=False,disp_coords=False)
+        self.f2 = CustomFigCanvas()
+        #self.f2,self.c2,self.a2,self.t2 = self.create_figure(axbox=[.025,.06,.95,.9],fig_size=(16,4),ax_off=False,disp_coords=False)
+        #self.a2.set_axis_bgcolor((1, 1, 1))
+
+        figs = QVBoxLayout()
+        figs.addWidget(self.t1)
+        figs.addWidget(self.c1)
+        figs.addWidget(self.f2)
+        #figs.addWidget(self.t2)
+        #figs.addWidget(self.c2)
+
+        #Add the rest of the layouts
+        final_layout = QHBoxLayout()
+        final_layout.addLayout(form)
+        final_layout.addSpacing(12)
+        final_layout.addLayout(figs)
+
+        #Set the GUI in the main frame
+        self.main_frame.setLayout(final_layout)
+        self.setCentralWidget(self.main_frame)
+
+
     def create_toolbar(self):
         '''
         Function to create the top toolbar functionality.  All actions are linked to functions defined below in the
         toolbar functions section of the code.
         '''
-        
+
         #Initialize some motor variables
         self.position = 0.0
         self.homed = False
@@ -1046,32 +1075,32 @@ class Window(QMainWindow):
         #Add the connection group
         self.connect_btn = self.create_action('connect',slot=self.connect_motor,
             icon='connect',shortcut='Ctrl+F', tip='Connect motor')
-            
+
         self.disconnect_btn = self.create_action('disconnect',slot=self.disconnect_motor,
             icon='disconnect',shortcut='Ctrl+G',tip='Disconnect motor')
-            
+
         self.home_btn = self.create_action('home',slot=self.send_home,
             icon='home',shortcut='Ctrl+H', tip='Return motor to home position')
-            
+
         self.enable_icon = self.create_qicon('enable','idle')
         self.enable_btn = self.create_action('enable',slot=self.enable_motor,
             icon=self.enable_icon,shortcut='Ctrl+E', tip='Enable motor axis',checkable=True)
-            
+
         self.disable_icon = self.create_qicon('disable','idle')
         self.disable_btn = self.create_action('disable',slot=self.disable_motor,
             icon=self.disable_icon,shortcut='Ctrl+D', tip='Disable motor axis', checkable=True)
-            
-            
+
+
         self.add_actions(self.toolbar,(self.connect_btn, self.disconnect_btn,
                                         None, self.home_btn, self.enable_btn,
                                         self.disable_btn))
-                      
-        #Add the status group                      
+
+        #Add the status group
         self.toolbar.addWidget(self.create_qlabel('Status:',font=self.general_font))
         self.motor_status = self.create_qlabel('IDLE',width=100,alignment='center',font=self.general_font,
                                             style='color: black; background-color: rgb(211,211,211); border: 2px solid black')
         self.toolbar.addWidget(self.motor_status)
-        
+
         #Spacing for aesthetics
         self.add_space(self.toolbar)
 
@@ -1084,7 +1113,7 @@ class Window(QMainWindow):
         '''
         dist_items = ['mm','cm']
         self.toolbar_dist_combo = self.create_qcombobox(dist_items,65,20,self.general_font,0)
-        self.toolbar.addWidget(self.toolbar_dist_combo)        
+        self.toolbar.addWidget(self.toolbar_dist_combo)
         '''
         self.motor_speed = QLineEdit()
         self.motor_speed.setFixedWidth(50)
@@ -1100,35 +1129,35 @@ class Window(QMainWindow):
         self.right_jog_btn = self.create_action('right',slot=self.jog_right,
             icon='right',shortcut='Ctrl+K', tip='Jog the motor right at the defined speed')
         self.add_actions(self.toolbar,(self.left_jog_btn,self.right_jog_btn,None,))
-        
+
         self.toolbar.addWidget(self.create_qlabel('Position:',font=self.general_font))
         self.position_box = self.create_qlabel('%.5f mm'%self.position,width=120,alignment='center',
                                 font=QFont('Lucidia',12),style='color: yellow; background-color: black')
         self.toolbar.addWidget(self.position_box)
-        
+
         #Spacing for aesthetics
         self.add_space(self.toolbar)
-        
+
         #Add the command group
         self.toolbar.addWidget(self.create_qlabel('Command:',font=self.general_font))
         self.command_line = QLineEdit()
         self.command_line.setFixedWidth(150)
         self.toolbar.addWidget(self.command_line)
-        
+
         self.run_btn = self.create_action('run',slot=self.send_command,
             icon='run',shortcut='Ctrl+R', tip='Run the current command line')
-            
+
         self.abort_btn1 = self.create_action('abort',slot=self.send_abort,
             icon='abort',shortcut='Ctrl+A', tip='Abort the current command')
 
         self.add_actions(self.toolbar,(self.run_btn,self.abort_btn1,))
-    
+
 ######################################################################################################################
 #######################################  Toolbar Functions  ##########################################################
-######################################################################################################################   
-                                                                                                                                                           
+######################################################################################################################
+
     def connect_motor(self):
-        
+
         #Check is motor is already connected:
         try:
             self.motor
@@ -1137,7 +1166,7 @@ class Window(QMainWindow):
         except:
             self.HOST = '192.168.1.2' #Host address
             self.PORT = 8000 #port number for socket
-            
+
             #First check to make sure we can connect to the motor
             try:
                 self.motor = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #Init socket (TCP/IP)
@@ -1147,32 +1176,32 @@ class Window(QMainWindow):
             except:
                 self.statusBar().showMessage('Error!  Could not connect to motor.')
                 return
-            
+
             #If we can connect, connect with a large timeout time
             self.motor = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #Init socket (TCP/IP)
             self.motor.settimeout(3600) #Connection willl automatically close if dormant for 1 hour
-            self.motor.connect((self.HOST,self.PORT)) #Bind HOST,PORT to socket  
+            self.motor.connect((self.HOST,self.PORT)) #Bind HOST,PORT to socket
             self.motor_status.setText('CONNECTED')
             self.motor_status.setStyleSheet('color: black; background-color: rgb(211,211,211); border: 2px solid black')
             self.statusBar().showMessage('Motor connected.')
-    
+
             #After connecting the motor, check is a loop is already running to collect the data
             #If not, start one
             self.motorLoop = ContinuousThread(self.motor)
             self.motorLoop.send_position.connect(self.update_position)
             self.motorLoop.start()
-          
+
     def disconnect_motor(self):
-        
+
         #If motor is enabled, disable it first
         if self.enable_btn.isChecked()==True:
             self.disable_motor()
-            
+
         #After it is disabled (if needed), attempt disconnnecting
         try:
             self.motor
             self.enable_btn.setChecked(False)
-            self.disable_btn.setChecked(False)      
+            self.disable_btn.setChecked(False)
             self.motor_status.setText('IDLE')
             self.motor_status.setStyleSheet('color: black; background-color: rgb(211,211,211); border: 2px solid black')
             self.motorLoop.terminate()
@@ -1184,9 +1213,9 @@ class Window(QMainWindow):
             self.statusBar().showMessage('Motor must be connected before disconnecting.')
         except:
             self.statusBar().showMessage('Error!  Could not disconnect from motor.')
-                                      
+
     def enable_motor(self):
-        
+
         #Check is we are connected to the motor
         try:
             self.motor
@@ -1194,9 +1223,9 @@ class Window(QMainWindow):
             self.statusBar().showMessage('Please connect motor first.')
             self.enable_btn.setChecked(False)
             return
-            
+
         #Otherwise motor is connected and we can attempt to enable
-        try:    
+        try:
             self.motorLoop.pause()
             self.motor.send('ENABLE X\n') #Send enable command
             response = self.motor.recv(1024) #Collect and print response
@@ -1212,25 +1241,25 @@ class Window(QMainWindow):
         except:
             self.statusBar().showMessage('Error!  Could not enable axis.')
 
-             
+
     def read_motor(self):
         self.motor.send('PFBK(X)\n')
         response = self.motor.recv(1024).strip()[1:]
         response = re.sub('[#$!%]','', response)
-        self.position = float(response)  
+        self.position = float(response)
         self.position_box.setText('%.5f mm'%self.position)
 
-                                      
+
     def disable_motor(self):
-        
+
         #Check is motor is enabled
         if self.enable_btn.isChecked()==False:
            self.statusBar().showMessage('Please enable axis first')
            self.disable_btn.setChecked(False)
            return
-       
+
         #Otherwise motor is enabled and we can attempt to disable it
-        try: 
+        try:
             self.motorLoop.pause()
             self.motor.send('DISABLE X\n') #Send enable command
             response = self.motor.recv(1024) #Collect and print response
@@ -1245,7 +1274,7 @@ class Window(QMainWindow):
                 self.statusBar().showMessage('Error!  Could not disable axis.')
         except:
             self.statusBar().showMessage('Error!  Could not disable axis.')
-             
+
     def send_command(self):
         try:
             self.motor
@@ -1263,10 +1292,10 @@ class Window(QMainWindow):
                     self.statusBar().showMessage('Error! Make sure command is valid')
                 self.motorLoop.resume()
         except AttributeError:
-            self.statusBar.showMessage('Please connect motor first')         
+            self.statusBar.showMessage('Please connect motor first')
         except:
             self.statusBar.showMessage('Error! Make sure command is valid')
-            
+
     def send_abort(self):
         try:
             self.motor
@@ -1284,18 +1313,18 @@ class Window(QMainWindow):
                     self.statusBar().showMessage('Error aborting!')
                 self.motorLoop.resume()
         except AttributeError:
-            self.statusBar.showMessage('Please connect motor first')         
+            self.statusBar.showMessage('Please connect motor first')
         except:
             self.statusBar.showMessage('Error aborting!')
-            
+
     def send_home(self):
-        
+
         def update_home_status(response):
             if response=='%\n':
                 self.statusBar().showMessage('Motor safely home.')
                 self.homed=True
             else:
-                self.statusBar().showMessage('Error going home!')                
+                self.statusBar().showMessage('Error going home!')
         try:
             self.motor
             if self.enable_btn.isChecked()==True:
@@ -1309,7 +1338,7 @@ class Window(QMainWindow):
             self.statusBar().showMessage('Please connect motor first')
         except:
             self.statusBar().showMessage('Error going home!')
-            
+
     def jog_left(self):
         try:
             self.motor
@@ -1333,7 +1362,7 @@ class Window(QMainWindow):
         except AttributeError:
             self.statusBar().showMessage('Pleae connect motor first')
         except:
-            self.statusBar().showMessage('Please enter a valid distance and/or speed')            
+            self.statusBar().showMessage('Please enter a valid distance and/or speed')
 
     def jog_right(self):
         try:
@@ -1356,13 +1385,13 @@ class Window(QMainWindow):
                     self.statusBar().showMessage('Error!')
                 self.motorLoop.resume()
         except AttributeError:
-            self.statusBar.showMessage('Please connect motor first')         
+            self.statusBar.showMessage('Please connect motor first')
         except:
             self.statusBar.showMessage('Please enter a valid distance and/or speed')
 
     def do_nothing(self):
-        pass      
-    
+        pass
+
     '''
     def start_stepper(self):
         if self.stepper.isOpen() == False:
@@ -1371,7 +1400,7 @@ class Window(QMainWindow):
             self.stepper.write(chr(int(round(255*self.chop_rate))))
         except:
             self.stepper.write(chr(255))
-        
+
     def stop_stepper(self,final=False):
         if final:
             self.stepper.close()
@@ -1386,7 +1415,7 @@ class Window(QMainWindow):
 ###########################################  Menu Functions  #########################################################
 ######################################################################################################################
 
-        
+
     def on_about(self):
         msg = "This software is designed to communicate with the FTS system, specifically "\
         "with the NI USB-6002 DAQ, FW102C Thor Labs filter wheel, IR Labs bolometer, "\
@@ -1394,20 +1423,12 @@ class Window(QMainWindow):
         "components can easily be added, with the appropriate drivers.\n\n"\
         "The save menu currently outputs a FITS file containing all the parameters "\
         "stored in the software, along with the data read from the DAQ\\motor."
-        
-        QMessageBox.about(self, "About FTS Controller", msg.strip())    
-        
-    def closeEvent(self, event):
-        
-        reply = QMessageBox.question(self, 'Confirm Quit',
-            "Are you sure you want to quit?", QMessageBox.Yes | 
-            QMessageBox.No, QMessageBox.No)
-    
-        if reply == QMessageBox.Yes:
-            event.accept()
-        else:
-            event.ignore()
-            
+
+        QMessageBox.about(self, "About FTS Controller", msg.strip())
+
+    #def closeEvent(self, event):
+    #    super(ControlWindow, self).closeEvent(event)
+
     def on_trouble(self):
         msg = "This software is designed to communicate with the FTS system, specifically "\
         "with the NI USB-6002 DAQ, FW102C Thor Labs filter wheel, IR Labs bolometer, "\
@@ -1415,23 +1436,22 @@ class Window(QMainWindow):
         "components can easily be added, with the appropriate drivers.\n\n"\
         "The save menu currently outputs a FITS file containing all the parameters "\
         "stored in the software, along with the data read from the DAQ\\motor."
-        
-        QMessageBox.about(self, "Troubule Shooting", msg.strip())    
- 
-            
-    def save(self):
 
+        QMessageBox.about(self, "Troubule Shooting", msg.strip())
+
+
+    def save(self):
         self.write_fits(self.save_file)
 
     def write_fits(self,fname):
-        
+
         #Now write the FITS file
-        #self.stop_stepper(final=True)  
+        #self.stop_stepper(final=True)
         prihdr = pyfits.Header()
         prihdr.set('SOURCE', str(self.source), 'Name of the source used')
         prihdr.set('NOTES',str(self.note),'Notes on the setup')
         prihdr.set('SOURCE TEMP',self.temp,'Temperature of the source used in K')
-        prihdr.set('SPEED',self.speed,'Speed of the motor in mm/s')        
+        prihdr.set('SPEED',self.speed,'Speed of the motor in mm/s')
         prihdr.set('FILTER',str(self.filtname),'Description of the filter used')
         prihdr.set('DISTANCE',self.throw,'Length of the mirror throw in mm')
         prihdr.set('NSAMPLES',int(self.num_sample),'Number of samples at each step')
@@ -1472,7 +1492,7 @@ class Window(QMainWindow):
         prihdr['COMMENT'] = 'Fourier'
         prihdr['COMMENT'] = 'Transform'
         '''
-        
+
         prihdu = pyfits.PrimaryHDU([self.DAQ_data],header=prihdr)
 
         xdhdu = pyfits.TableHDU.from_columns(
@@ -1481,19 +1501,20 @@ class Window(QMainWindow):
         #        [pyfits.Column(name='DAQ_data',format='E15.7',array=np.asarray(self.DAQ_data)[:,0])])
         #thdu = pyfits.TableHDU.from_columns(
         #        [pyfits.Column(name='Transmission',format='E15.7',array=self.trans)])
-        
+
         #hdulist = pyfits.HDUList([prihdu,xbhdu,ybhdu,xdhdu,ydhdu,thdu])
         hdulist = pyfits.HDUList([prihdu,xdhdu])
-        hdulist.writeto(self.save_file,clobber=True)            
+        hdulist.writeto(self.save_file,clobber=True)
 
 ######################################################################################################################
 ###########################################  GUI Functions  ##########################################################
-######################################################################################################################   
+######################################################################################################################
+    '''
     def position_filter(self):
         filt_wheel = FilterWheelDriver(p=0,baud=115200)
         filt_wheel.setPos(self.filt_pos)
         filt_wheel.close()
-        
+    '''
     def systems_check(self):
         '''
         Function to check the connections of all the components and make sure
@@ -1507,7 +1528,8 @@ class Window(QMainWindow):
         except:
             stepper_check = 'Problem with connecting the stepper.\n'+\
                             'Please make sure that the stepper motor is connected on COM3.\n\n'
-        '''            
+        '''
+        '''
         try:
             filt_wheel = FilterWheelDriver(p=0,baud=115200)
             filt_wheel.close()
@@ -1515,13 +1537,13 @@ class Window(QMainWindow):
         except:
             filter_check = 'Problem with connecting the filter wheel.\n'+\
                            'Please make sure that the filter wheel is connected on COM1.\n\n'
-        
+
         if self.enable_btn.isChecked():
-            motor_check = 'Motor check: CLEAR.\n\n'  
+            motor_check = 'Motor check: CLEAR.\n\n'
         else:
             motor_check = 'Motor not enabled.\n'+\
-                          'Please make sure that the motor is connected and enabled.\n\n'            
-            
+                          'Please make sure that the motor is connected and enabled.\n\n'
+
 
         try:
             channel = str(self.DAQchannel_combo.currentText())
@@ -1533,8 +1555,8 @@ class Window(QMainWindow):
                         'Please make sure that the correct device and channel numbers were provided.\n'+\
                         'The DAQ must be listed as Dev1 in the NI Max software.\n'+\
                         'N.B. An innapropriately provided channel will simply result in noise.\n\n'
-        
-        checks = np.asarray([filter_check,DAQ_check,motor_check])              
+
+        checks = np.asarray([filter_check,DAQ_check,motor_check])
         checks_cleared = np.asarray(['CLEAR' in check for check in checks])
         checks_failed = ~checks_cleared
         msg_txt = ''
@@ -1543,14 +1565,15 @@ class Window(QMainWindow):
         else:
             for check in checks[checks_cleared]: msg_txt+=check
             msg_txt += 'Warnings:\n\n'
-            for check in checks[checks_failed]: msg_txt+=check 
+            for check in checks[checks_failed]: msg_txt+=check
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
             msg.setText(msg_txt)
             msg.setWindowTitle('Systems check')
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.show()  
-    
+            msg.show()
+    '''
+
     def inputs_check(self):
         '''
         Function to make sure that the inputs are all of the correct type
@@ -1558,7 +1581,7 @@ class Window(QMainWindow):
         '''
 
         checks = []
-        
+
         #Speed check
         try:
             self.speed = float(self.speed_line.text())
@@ -1568,7 +1591,7 @@ class Window(QMainWindow):
                 checks.append('Speed: CLEAR\n\n')
         except:
             checks.append('Speed: Please enter a valid number.\n\n')
-            
+
         #Assign filter name
         if self.filtname_line.text()=='':
             self.filtname = 'N/A'
@@ -1576,24 +1599,24 @@ class Window(QMainWindow):
         else:
             self.filtname = self.filtname_line.text()
             checks.append('Filter Name: CLEAR\n\n')
-            
+
         #Assign filter position
         self.filt_pos = int(self.filtpos_combo.currentText()[-1])
-        
+
         #Assign gain
         self.gain = int(self.gain_combo.currentText())
-        
+
         #Assign DAQ channel
         self.DAQ_channel = str(self.DAQchannel_combo.currentText())
-        
-        
+
+
         #This should be updated to actually be dynamic to start at user
         #defined position - currently the scan starts from the current position
         #when the scan is submitted
-        
+
         self.zopd=0
-        self.at_zopd=True  
-          
+        self.at_zopd=True
+
         #Throw check
         if np.isnan(self.zopd):
             checks.append('Throw Distance: Please find ZOPD first.\n\n')
@@ -1620,11 +1643,11 @@ class Window(QMainWindow):
             checks.append('# Samples: CLEAR\n\n')
         except:
             checks.append('# Samples: Please enter a valid number.\n\n')
-            
+
         #Samples check
         try:
             self.step_size = float(self.step_line.text())
-            if self.reverse_btn.isChecked()==True: 
+            if self.reverse_btn.isChecked()==True:
                 self.step_size*=-1
             if np.abs(self.step_size)>np.abs(self.throw):
                 checks.append('Step Size: Must be <= Throw Distance.\n\n')
@@ -1632,8 +1655,8 @@ class Window(QMainWindow):
                 checks.append('Step Size: CLEAR\n\n')
         except:
             checks.append('Step Size: Please enter a valid number.\n\n')
-        
-                    
+
+
         #Chop rate check
         try:
             self.chop_rate = float(self.chop_rate_line.text())
@@ -1644,7 +1667,7 @@ class Window(QMainWindow):
                 checks.append('Chop Rate: CLEAR\n\n')
         except:
             checks.append('Chop Rate: Please enter a valid number.\n\n')
-            
+
         #Sampling rate check
         try:
             self.samp_rate = float(self.samp_rate_line.text())
@@ -1654,10 +1677,10 @@ class Window(QMainWindow):
                 checks.append('Sampling Rate: CLEAR\n\n')
         except:
             checks.append('Sampling Rate: Please enter a valid number.\n\n')
-        
+
         #Save file check
         self.save_file = self.save_line.text()
-        self.save_file = self.save_file.replace('/','\\')  
+        self.save_file = self.save_file.replace('/','\\')
         if self.save_file!='':
             extension = self.save_file.split('.')[-1]
             direc = os.path.dirname(str(self.save_file))
@@ -1671,7 +1694,7 @@ class Window(QMainWindow):
             self.num_files = len(glob.glob('C:/Users/Philip/Desktop/FTS_Software/Data/default_fname_*.fits'))
             self.save_file = 'C:/Users/Philip/Desktop/FTS_Software/Data/default_fname_%03i.fits'%self.num_files
             checks.append('Save File: CLEAR\n\n')
-        
+
         #Source assignment
         if self.source_line.text()=='':
             self.source = 'N/A'
@@ -1679,7 +1702,7 @@ class Window(QMainWindow):
         else:
             self.source = self.source_line.text()
             checks.append('Source: CLEAR\n\n')
-        
+
         #Source temperature check
         try:
             self.temp = float(self.source_temp_line.text())
@@ -1689,7 +1712,7 @@ class Window(QMainWindow):
                 checks.append('Source Temp: CLEAR\n\n')
             else:
                 checks.append('Source Temp: If entering a source temperature, please enter a valid number.\n\n')
-                
+
         #Detector presure check
         try:
             self.press = float(self.press_line.text())
@@ -1700,7 +1723,7 @@ class Window(QMainWindow):
                 checks.append('Detector Pressure: CLEAR\n\n')
             else:
                 checks.append('Detector Pressure: If entering a detector pressure, please enter a valid number.\n\n')
-            
+
         #LI sensitivty check
         valid_sensitivities = [i*j for (i,j) in itertools.product([1,2,5],[1,10,100])]
         try:
@@ -1711,7 +1734,7 @@ class Window(QMainWindow):
                 checks.append('LI Sensitivity: CLEAR\n\n')
             else:
                 checks.append('LI Sensitivity: If entering a LI sensitivity, please enter a valid number.\n\n')
-    
+
         except:
             if self.li_sens_line.text()=='':
                 self.li_sens='N/A'
@@ -1729,13 +1752,13 @@ class Window(QMainWindow):
                 checks.append('LI Time Constant: CLEAR\n\n')
             else:
                 checks.append('LI Time Constant: If entering a LI time constant, please enter a valid number.\n\n')
-            
+
         except:
             if self.li_time_line.text()=='':
                 self.li_time='N/A'
                 checks.append('LI Time Constant: CLEAR\n\n')
             else:
-                checks.append('LI Time Constant: If entering a LI time constant, please enter a valid number.\n\n')  
+                checks.append('LI Time Constant: If entering a LI time constant, please enter a valid number.\n\n')
 
         #Notes check
         if self.note_line.text()=='':
@@ -1744,8 +1767,8 @@ class Window(QMainWindow):
         else:
             self.note = self.note_line.text()
             checks.append('Notes: CLEAR\n\n')
-            
-        checks = np.asarray(checks)              
+
+        checks = np.asarray(checks)
         checks_cleared = np.asarray(['CLEAR' in check for check in checks])
         checks_failed = ~checks_cleared
         msg_txt = ''
@@ -1754,13 +1777,13 @@ class Window(QMainWindow):
         else:
             for check in checks[checks_cleared]: msg_txt+=check
             msg_txt += 'Warnings:\n\n'
-            for check in checks[checks_failed]: msg_txt+=check 
+            for check in checks[checks_failed]: msg_txt+=check
             msg = QMessageBox(self)
             msg.setIcon(QMessageBox.Warning)
             msg.setText(msg_txt)
             msg.setWindowTitle('Parameters check')
             msg.setStandardButtons(QMessageBox.Ok)
-            msg.show()                                        
+            msg.show()
 
     def confirm_inputs(self):
         '''
@@ -1785,9 +1808,9 @@ class Window(QMainWindow):
         elif (self.source=='N/A') and (self.temp!='N/A'):
             msg_txt += 'Source: N/A @ '+'%i'%self.temp+' K\n\n'
         else:
-            msg_txt += 'Source: '+self.source+' @ '+'%i'%self.temp+' K\n\n'    
+            msg_txt += 'Source: '+self.source+' @ '+'%i'%self.temp+' K\n\n'
         if self.press=='N/A':
-            msg_txt += 'Detector Pressure: N/A\n\n'            
+            msg_txt += 'Detector Pressure: N/A\n\n'
         else:
             msg_txt += 'Detector Pressure: %i'%self.press+' mbar\n\n'
         if self.li_sens=='N/A':
@@ -1801,21 +1824,21 @@ class Window(QMainWindow):
         msg_txt += 'Are these parameters OK?'
 
         reply = QMessageBox.question(self, 'Parameter Confirmation',
-            msg_txt, QMessageBox.Yes | 
+            msg_txt, QMessageBox.Yes |
             QMessageBox.No, QMessageBox.No)
-    
+
         if reply == QMessageBox.Yes:
             self.inputs_confirmed = True
-        else:  
-            self.inputs_confirmed = False  
-        
+        else:
+            self.inputs_confirmed = False
+
         pass
 
     def open_save(self):
-        
+
         directory = QFileDialog.getSaveFileName(self,'Select Save File')
         self.save_line.setText(directory.replace('\\','\\'))
-        
+
     def interferogram(self,x):
         ans = 0
         for i in range(25):
@@ -1824,29 +1847,29 @@ class Window(QMainWindow):
 
     def on_submit(self):
 
-        self.systems_check()        
+        self.systems_check()
 
         if self.inputs_confirmed:
 
             self.DAQ = MultiChannelAnalogInput(self.DAQ_channel)
             #self.stepper = serial.Serial('COM3',9600,timeout = 1)
             time.sleep(2)
-            
+
             #self.start_stepper()
             self.position_filter()
-            
+
             #time.sleep(25)
-            
+
             #Update the status bar
             self.statusBar().showMessage('Performing scan.')
-            
+
             #Create the slot to send the finished signal to for the offset scan
             def full_scan():
                 thread_text = 'Performing scan.'
                 finished_text = 'Scan finished'
                 self.run_scan(-1.*self.step_size,self.throw,self.num_sample,self.speed,
-                self.samp_rate,self.li_time,thread_text,finished_text,"finished()",self.save,True,False) 
-                    
+                self.samp_rate,self.li_time,thread_text,finished_text,"finished()",self.save,True,False)
+
             #Now run the scan
             status_text = 'Performing scan'
             #First we slew to one side of the scan in one step and the speed provided
@@ -1855,16 +1878,85 @@ class Window(QMainWindow):
 
         else:
             return
-            
-        
-        
 
-                            
+class AnalysisWindow(Window):
+    def __init__(self):
+        super(AnalysisWindow,self).__init__()
+        self.setWindowTitle('FTS Analysis')
+        self.show()
+
+    def create_main_frame(self):
+        '''
+        This is the function where all the additional functionality and layout of the GUI is defined.  Every button,
+        figure, and action is defined here and displayed using the builtin layout options of PyQt.  This allows for
+        dynamic resizing/positioning of the items in the GUI.
+        '''
+        self.main_frame = QWidget()
+        self.create_status_bar('FTS_Software_v1.0')
+
+        #Create our various fonts
+        title_font = self.create_qfont('Lucidia',16,('underlined',))
+
+        #Create the input form.  This is a long bit of code, but we use individual layouts to allow
+        #for better positioning freedom.
+        form = QVBoxLayout()
+        form.addStretch()
+
+        #First we add the title line
+        title1 = self.create_qlabel('Add Numbers',375,20,'center',title_font)
+        form.addWidget(title1)
+
+        #Add the input box
+        add_box = QHBoxLayout()
+        add_box.setSpacing(0)
+        add_label = self.create_qlabel('Inputs',120,20,'left',self.general_font)
+        self.a_line = self.create_qline(70,20,font=self.general_font)
+        self.b_line = self.create_qline(70,20,font=self.general_font)
+        add_box.addWidget(add_label)
+        add_box.addWidget(self.a_line)
+        add_box.addWidget(self.b_line)
+        add_box.addStretch()
+        form.addLayout(add_box)
+
+        #Add the add button
+        btn_box = QHBoxLayout()
+        btn_box.setSpacing(0)
+        btn_box.addWidget(self.create_qpushbutton('Add', self.add))
+        btn_box.addStretch()
+        form.addLayout(btn_box)
+
+        form.setAlignment(Qt.AlignCenter)
+
+        #Add the display
+        display_box = QVBoxLayout()
+        self.displaylabel = self.create_qlabel('Display')
+        display_box.addWidget(self.displaylabel)
+
+        #Add the rest of the layouts
+        final_layout = QHBoxLayout()
+        final_layout.addLayout(form)
+        final_layout.addSpacing(12)
+        final_layout.addLayout(display_box)
+
+        #Set the GUI in the main frame
+        self.main_frame.setLayout(final_layout)
+        self.setCentralWidget(self.main_frame)
+
+    #def closeEvent(self, event):
+    #    super(AnalysisWindow, self).closeEvent(event)
+
+    def add(self):
+        a = self.a_line.displayText().toFloat()[0]
+        b = self.b_line.displayText().toFloat()[0]
+        self.displaylabel.setText(str(a+b))
+
 def main():
     app = QApplication(sys.argv)
-    window = Window()
-    window.showMaximized()
+    cwindow = ControlWindow()
+    cwindow.showMaximized()
+    awindow = AnalysisWindow()
+    awindow.showMaximized()
     sys.exit(app.exec_())
-    
+
 if __name__ == '__main__':
     main()
