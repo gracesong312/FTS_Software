@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, platform
 import numpy as np
 import pyfits
 import itertools
@@ -7,8 +7,8 @@ from PyQt4.QtGui import *
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT# as NavigationToolbar
 from matplotlib.figure import Figure
-#from FTS.thorFW102cDriver import FilterWheelDriver
-#from FTS.NIdaqDriver import MultiChannelAnalogInput
+from FTS.thorFW102cDriver import FilterWheelDriver
+from FTS.NIdaqDriver import MultiChannelAnalogInput
 from matplotlib import pyplot as plt
 from matplotlib.animation import TimedAnimation
 from matplotlib.lines import Line2D
@@ -260,6 +260,8 @@ class Window(QMainWindow):
         self.setGeometry(0,0,1920,1080)
         self.dpi = 100
         self.icon_direc = '../Icons/'
+        if platform.system() == 'Windows':
+            self.icon_direc = 'C:\\Users\\Philip\\Desktop\\FTS_Software\\Icons\\'
         self.general_font = self.create_qfont('Lucidia',12)
         self.setWindowIcon(QIcon(self.icon_direc+'logo.png'))
         self.create_menu()
@@ -1520,7 +1522,7 @@ class ControlWindow(Window):
         Function to check the connections of all the components and make sure
         everything is set up properly.
         '''
-        '''
+        
         try:
             stepper = serial.Serial('COM3',9600,timeout = 1)
             stepper.close()
@@ -1528,8 +1530,8 @@ class ControlWindow(Window):
         except:
             stepper_check = 'Problem with connecting the stepper.\n'+\
                             'Please make sure that the stepper motor is connected on COM3.\n\n'
-        '''
-        '''
+        
+        
         try:
             filt_wheel = FilterWheelDriver(p=0,baud=115200)
             filt_wheel.close()
@@ -1572,7 +1574,7 @@ class ControlWindow(Window):
             msg.setWindowTitle('Systems check')
             msg.setStandardButtons(QMessageBox.Ok)
             msg.show()
-    '''
+    
 
     def inputs_check(self):
         '''
