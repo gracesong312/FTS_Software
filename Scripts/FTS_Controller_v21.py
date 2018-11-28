@@ -7,11 +7,14 @@ from PyQt4.QtGui import *
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT# as NavigationToolbar
 from matplotlib.figure import Figure
-from FTS.thorFW102cDriver import FilterWheelDriver
-from FTS.NIdaqDriver import MultiChannelAnalogInput
+if platform.system() == 'Windows':
+    from FTS.thorFW102cDriver import FilterWheelDriver
+    from FTS.NIdaqDriver import MultiChannelAnalogInput
 from matplotlib import pyplot as plt
 from matplotlib.animation import TimedAnimation
 from matplotlib.lines import Line2D
+from scipy import fftpack
+import math
 import time
 import socket
 import glob
@@ -418,7 +421,6 @@ class Window(QMainWindow):
         reply = QMessageBox.question(self, 'Confirm Quit',
             "Are you sure you want to quit?", QMessageBox.Yes |
             QMessageBox.No, QMessageBox.No)
-
         if reply == QMessageBox.Yes:
             event.accept()
         else:
@@ -1522,7 +1524,7 @@ class ControlWindow(Window):
         Function to check the connections of all the components and make sure
         everything is set up properly.
         '''
-        
+
         try:
             stepper = serial.Serial('COM3',9600,timeout = 1)
             stepper.close()
@@ -1530,8 +1532,8 @@ class ControlWindow(Window):
         except:
             stepper_check = 'Problem with connecting the stepper.\n'+\
                             'Please make sure that the stepper motor is connected on COM3.\n\n'
-        
-        
+
+
         try:
             filt_wheel = FilterWheelDriver(p=0,baud=115200)
             filt_wheel.close()
@@ -1574,7 +1576,7 @@ class ControlWindow(Window):
             msg.setWindowTitle('Systems check')
             msg.setStandardButtons(QMessageBox.Ok)
             msg.show()
-    
+
 
     def inputs_check(self):
         '''
@@ -1908,6 +1910,30 @@ class AnalysisWindow(Window):
         title1 = self.create_qlabel('Add Numbers',375,20,'center',title_font)
         form.addWidget(title1)
 
+        #Add the data file box
+        data_box = QHBoxLayout()
+        data_box.setSpacing(0)
+        data_label = self.create_qlabel('Data File:',120,20,'left',self.general_font)
+        self.data_line = self.create_qline(180,20,font=self.general_font)
+        self.selectData_btn = self.create_qpushbutton('Select',self.open_data,width=65,height=22,font=self.general_font)
+        data_box.addWidget(data_label)
+        data_box.addWidget(self.data_line)
+        data_box.addWidget(self.selectData_btn)
+        data_box.addStretch()
+        form.addLayout(data_box)
+
+        #Add the atmosphere file box
+        atm_box = QHBoxLayout()
+        atm_box.setSpacing(0)
+        atm_label = self.create_qlabel('Atmosphere File:',120,20,'left',self.general_font)
+        self.atm_line = self.create_qline(180,20,font=self.general_font)
+        self.selectAtm_btn = self.create_qpushbutton('Select',self.open_atm,width=65,height=22,font=self.general_font)
+        atm_box.addWidget(atm_label)
+        atm_box.addWidget(self.atm_line)
+        atm_box.addWidget(self.selectAtm_btn)
+        atm_box.addStretch()
+        form.addLayout(atm_box)
+
         #Add the input box
         add_box = QHBoxLayout()
         add_box.setSpacing(0)
@@ -1923,7 +1949,7 @@ class AnalysisWindow(Window):
         #Add the add button
         btn_box = QHBoxLayout()
         btn_box.setSpacing(0)
-        btn_box.addWidget(self.create_qpushbutton('Add', self.add))
+        btn_box.addWidget(self.create_qpushbutton('Plot', self.plot_fft))
         btn_box.addStretch()
         form.addLayout(btn_box)
 
@@ -1933,6 +1959,10 @@ class AnalysisWindow(Window):
         display_box = QVBoxLayout()
         self.displaylabel = self.create_qlabel('Display')
         display_box.addWidget(self.displaylabel)
+
+        #Add figure
+        self.f1,self.c1,self.a1,self.t1 = self.create_figure(axbox=[.025,.06,.95,.9],fig_size=(16,4),ax_off=False,disp_coords=False)
+        display_box.addWidget(self.c1)
 
         #Add the rest of the layouts
         final_layout = QHBoxLayout()
@@ -1951,6 +1981,46 @@ class AnalysisWindow(Window):
         a = self.a_line.displayText().toFloat()[0]
         b = self.b_line.displayText().toFloat()[0]
         self.displaylabel.setText(str(a+b))
+
+    def open_data(self):
+        directory = QFileDialog.getOpenFileName(self,'Select Data File')
+        self.data_line.setText(directory.replace('\\','\\'))
+
+    def open_atm(self):
+        directory = QFileDialog.getOpenFileName(self,'Select Atmosphere File')
+        self.atm_line.setText(directory.replace('\\','\\'))
+
+    def plot_fft(self):
+        atm_hdu_list = []
+        if(self.data_line.text().isEmpty()):
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setText("Please enter a data file")
+            msg.setFixedSize(500, 200);
+            msg.exec_()
+            return
+        data_hdu_list = pyfits.open(str(self.data_line.text()), memmap=True)
+        data_raw = np.squeeze(data_hdu_list[0].data)
+        if(not self.atm_line.text().isEmpty()):
+            atm_hdu_list = pyfits.open(str(self.atm_line.text()), memmap=True)
+            data_raw = data_raw/np.squeeze(atm_hdu_list[0].data)
+    	data = np.mean(data_raw, 1)
+    	pos = data_hdu_list[1].data
+    	pos_even = np.linspace(pos[0], pos[-1], len(pos))
+    	fit = np.polyval(np.polyfit(pos_even,data,3),pos_even)
+    	data -= fit
+    	dx = np.abs((pos_even[-1]-pos_even[0])/len(pos_even)) #[mm]
+
+    	fdata = fftpack.fft(data)
+    	theta = np.arctan(np.imag(fdata)/np.real(fdata))
+    	fdata = np.real(fdata)*np.cos(theta) + np.imag(fdata)*np.sin(theta)
+    	c = 2.99792458e11 #[mm/s]
+    	fmax = c/(4*dx*np.cos(12.832/2*math.pi/180)*np.cos(14.09*math.pi/180)*10**9) #[GHz]
+    	fx = np.linspace(0, fmax, len(pos_even)) #[mm]
+    	plt.xlabel("Frequency (GHz)")
+    	fig = plt.plot(fx, np.abs(fdata))
+        self.c1 = FigureCanvas.__init__(self.c1, fig)
+        self.fig.draw()
 
 def main():
     app = QApplication(sys.argv)
