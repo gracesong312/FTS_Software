@@ -1041,6 +1041,7 @@ class ControlWindow(Window):
         figs = QVBoxLayout()
         figs.addWidget(self.t1)
         figs.addWidget(self.c1)
+        #figs.addWidget(self.a1)
         figs.addWidget(self.f2)
         #figs.addWidget(self.t2)
         #figs.addWidget(self.c2)
@@ -1907,13 +1908,13 @@ class AnalysisWindow(Window):
         form.addStretch()
 
         #First we add the title line
-        title1 = self.create_qlabel('Add Numbers',375,20,'center',title_font)
+        title1 = self.create_qlabel('Choose Files',375,20,'center',title_font)
         form.addWidget(title1)
 
         #Add the data file box
         data_box = QHBoxLayout()
         data_box.setSpacing(0)
-        data_label = self.create_qlabel('Data File:',120,20,'left',self.general_font)
+        data_label = self.create_qlabel('Data File:',150,20,'left',self.general_font)
         self.data_line = self.create_qline(180,20,font=self.general_font)
         self.selectData_btn = self.create_qpushbutton('Select',self.open_data,width=65,height=22,font=self.general_font)
         data_box.addWidget(data_label)
@@ -1925,7 +1926,7 @@ class AnalysisWindow(Window):
         #Add the atmosphere file box
         atm_box = QHBoxLayout()
         atm_box.setSpacing(0)
-        atm_label = self.create_qlabel('Atmosphere File:',120,20,'left',self.general_font)
+        atm_label = self.create_qlabel('Atmosphere File:',150,20,'left',self.general_font)
         self.atm_line = self.create_qline(180,20,font=self.general_font)
         self.selectAtm_btn = self.create_qpushbutton('Select',self.open_atm,width=65,height=22,font=self.general_font)
         atm_box.addWidget(atm_label)
@@ -1933,7 +1934,7 @@ class AnalysisWindow(Window):
         atm_box.addWidget(self.selectAtm_btn)
         atm_box.addStretch()
         form.addLayout(atm_box)
-
+        '''
         #Add the input box
         add_box = QHBoxLayout()
         add_box.setSpacing(0)
@@ -1945,11 +1946,13 @@ class AnalysisWindow(Window):
         add_box.addWidget(self.b_line)
         add_box.addStretch()
         form.addLayout(add_box)
+        '''
 
         #Add the add button
         btn_box = QHBoxLayout()
         btn_box.setSpacing(0)
-        btn_box.addWidget(self.create_qpushbutton('Plot', self.plot_fft))
+        btn_box.addWidget(self.create_qpushbutton('Plot FFT', self.plot_fft))
+        btn_box.addWidget(self.create_qpushbutton('Plot Data', self.plot_data))
         btn_box.addStretch()
         form.addLayout(btn_box)
 
@@ -1957,8 +1960,6 @@ class AnalysisWindow(Window):
 
         #Add the display
         display_box = QVBoxLayout()
-        self.displaylabel = self.create_qlabel('Display')
-        display_box.addWidget(self.displaylabel)
 
         #Add figure
         self.f1,self.c1,self.a1,self.t1 = self.create_figure(axbox=[.025,.06,.95,.9],fig_size=(16,4),ax_off=False,disp_coords=False)
@@ -2017,10 +2018,34 @@ class AnalysisWindow(Window):
     	c = 2.99792458e11 #[mm/s]
     	fmax = c/(4*dx*np.cos(12.832/2*math.pi/180)*np.cos(14.09*math.pi/180)*10**9) #[GHz]
     	fx = np.linspace(0, fmax, len(pos_even)) #[mm]
-    	plt.xlabel("Frequency (GHz)")
-    	fig = plt.plot(fx, np.abs(fdata))
-        self.c1 = FigureCanvas.__init__(self.c1, fig)
-        self.fig.draw()
+        self.a1.clear()
+        self.a1=self.c1.figure.add_subplot(111)
+    	self.a1.plot(fx, np.abs(fdata))
+        self.a1.set_xlabel("Frequency (GHz)")
+        self.a1.set_title("FFT")
+        self.c1.draw()
+
+    def plot_data(self):
+        if(self.data_line.text().isEmpty()):
+            msg = QMessageBox()
+            msg.setIcon(QMessageBox.Critical)
+            msg.setText("Please enter a data file")
+            msg.setFixedSize(500, 200);
+            msg.exec_()
+            return
+        data_hdu_list = pyfits.open(str(self.data_line.text()), memmap=True)
+        data_raw = np.squeeze(data_hdu_list[0].data)
+    	data = np.mean(data_raw, 1)
+    	pos = data_hdu_list[1].data
+    	pos_even = np.linspace(pos[0], pos[-1], len(pos))
+    	fit = np.polyval(np.polyfit(pos_even,data,3),pos_even)
+    	data -= fit
+        self.a1.clear()
+        self.a1=self.c1.figure.add_subplot(111)
+    	self.a1.plot(pos_even, np.abs(data))
+        self.a1.set_xlabel("Position (mm)")
+        self.a1.set_title("Data")
+        self.c1.draw()
 
 def main():
     app = QApplication(sys.argv)
